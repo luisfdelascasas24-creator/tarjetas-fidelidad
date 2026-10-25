@@ -39,6 +39,10 @@
       <div class="qr" id="qr"></div>
       <div class="code" id="code"></div>
       <p class="muted" style="text-align:center">Muestra este código en caja para sumar tus sellos.</p>
+      <div id="walletWrap" class="hidden">
+        <button id="walletBtn" class="wallet-btn">Agregar a Google Wallet</button>
+        <div id="walletMsg"></div>
+      </div>
     </div>
     <div class="card"><p class="muted" style="text-align:center;margin:0">Tip: agrega esta página a la pantalla de inicio de tu celular para tener la tarjeta a mano.</p></div>
   </div>
@@ -118,6 +122,8 @@ function renderCard(c) {
   rb.classList.toggle("hidden", !c.ready);
   rb.textContent = "¡Premio listo! " + c.reward + ". Pídelo en caja.";
   $("code").textContent = c.code;
+  const walletOn = !!(window.APP_CONFIG || {}).WALLET_ENABLED && !/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  $("walletWrap").classList.toggle("hidden", !walletOn);
   if (!qrDone) {
     try { new QRCode($("qr"), { text: c.token, width: 200, height: 200 }); qrDone = true; } catch (e) {}
   }
@@ -129,6 +135,26 @@ function renderCard(c) {
     }, 10000);
   }
 }
+
+$("walletBtn").addEventListener("click", async () => {
+  const btn = $("walletBtn");
+  btn.disabled = true;
+  $("walletMsg").innerHTML = "";
+  try {
+    const cfg = window.APP_CONFIG;
+    const r = await fetch(cfg.SUPABASE_URL + "/functions/v1/wallet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: cfg.SUPABASE_ANON_KEY },
+      body: JSON.stringify({ action: "save", token: token })
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "No se pudo preparar la tarjeta");
+    location.href = j.url;
+  } catch (e) {
+    $("walletMsg").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>";
+  }
+  btn.disabled = false;
+});
 
 init();
 </script>

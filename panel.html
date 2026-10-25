@@ -113,6 +113,17 @@ async function lookup(code) {
   } catch (e) { msg("err", e.message); }
 }
 
+// Avisa a Google Wallet (si el cliente agregó su tarjeta) que cambió su saldo de sellos
+function walletSync(code, event) {
+  const c = window.APP_CONFIG || {};
+  if (!c.WALLET_ENABLED) return;
+  fetch(c.SUPABASE_URL + "/functions/v1/wallet", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: c.SUPABASE_ANON_KEY },
+    body: JSON.stringify({ action: "sync", slug: slug, pin: pin, code: code, event: event })
+  }).catch(() => {});
+}
+
 async function act(ready) {
   $("doBtn").disabled = true;
   try {
@@ -120,6 +131,7 @@ async function act(ready) {
     if (!r.ok) { msg("err", r.error); $("doBtn").disabled = false; return; }
     $("customerBox").classList.add("hidden");
     $("codeInput").value = "";
+    walletSync(currentCode, ready ? "redeem" : "stamp");
     if (ready) msg("ok", "Premio canjeado para " + r.name + ": " + r.reward);
     else msg("ok", "Sello sumado a " + r.name + " (" + r.stamps + "/" + r.stamps_required + ")" + (r.ready ? " — ¡premio listo!" : ""));
     loadStats();
