@@ -53,6 +53,8 @@ th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line
 .modal .card { max-width: 340px; width: 100%; text-align: center; margin: 0; }
 
 .wallet-btn { background: #000; color: #fff; border-radius: 999px; }
+.promo { border-left: 6px solid var(--brand2); }
+.promo b { font-size: 1.05rem; }
 
 /* Editor de diseño (admin) */
 .split { display: grid; grid-template-columns: 1fr; gap: 16px; }

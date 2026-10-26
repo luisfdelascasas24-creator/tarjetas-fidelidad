@@ -31,6 +31,7 @@
   <!-- Tarjeta -->
   <div id="cardView" class="hidden">
     <div class="head" id="cardHead"></div>
+    <div id="promos"></div>
     <div class="card">
       <p class="big" id="hello"></p>
       <div class="stamps" id="stamps"></div>
@@ -61,6 +62,9 @@ function show(id) {
   ["loading", "error", "registerView", "cardView"].forEach(v => $(v).classList.toggle("hidden", v !== id));
 }
 function fail(text) { $("errorText").textContent = text; show("error"); }
+function untilDate(iso) {
+  return new Date(iso).toLocaleDateString("es-CL", { timeZone: "America/Santiago", day: "2-digit", month: "2-digit" });
+}
 
 function headHtml(t, name) {
   document.title = name;
@@ -111,6 +115,9 @@ $("registerBtn").addEventListener("click", async () => {
 function renderCard(c) {
   applyTheme(c);
   $("cardHead").innerHTML = headHtml(c, c.restaurant_name);
+  $("promos").innerHTML = (c.promos || []).map(p =>
+    '<div class="card promo"><b>' + esc(p.title) + '</b><p style="margin:6px 0 0">' + esc(p.body) +
+    '</p><p class="muted" style="margin:6px 0 0">Hasta el ' + esc(untilDate(p.expires_at)) + "</p></div>").join("");
   $("hello").textContent = "Hola, " + c.name;
   const icon = esc(c.stamp_icon || "★");
   $("stamps").innerHTML = Array.from({ length: c.stamps_required }, (_, i) =>

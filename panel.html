@@ -40,6 +40,40 @@
     </div>
 
     <div class="card">
+      <h2>Promociones</h2>
+      <p class="muted">Se muestran en la tarjeta de tus clientes y, si quieres, también llegan como aviso a su Google Wallet (solo a quienes aceptaron recibir promociones).</p>
+      <label for="pTitle">Título</label>
+      <input id="pTitle" maxlength="60" placeholder="Ej: Martes de pisco sour 2x1">
+      <label for="pBody">Mensaje</label>
+      <input id="pBody" maxlength="200" placeholder="Ej: Este martes, por cada plato de fondo, un pisco sour gratis.">
+      <div class="row2">
+        <div>
+          <label for="pAudience">¿Para quién?</label>
+          <select id="pAudience">
+            <option value="all">Todos los clientes</option>
+            <option value="inactive">No vienen hace 30 días</option>
+            <option value="near_reward">A 1 o 2 sellos del premio</option>
+          </select>
+        </div>
+        <div>
+          <label for="pDays">Dura</label>
+          <select id="pDays">
+            <option value="3">3 días</option>
+            <option value="7" selected>7 días</option>
+            <option value="14">14 días</option>
+            <option value="30">30 días</option>
+          </select>
+        </div>
+      </div>
+      <p class="muted" id="pReach" style="margin:8px 0 0"></p>
+      <label class="check" id="pPushWrap"><input type="checkbox" id="pPush" checked> Enviar también como aviso al Google Wallet</label>
+      <button id="pPublish">Publicar promoción</button>
+      <div id="pMsg"></div>
+      <h3 style="margin-top:18px;font-size:1rem">Tus promociones</h3>
+      <div id="pList"><p class="muted">Aún no hay promociones</p></div>
+    </div>
+
+    <div class="card">
       <h2>Clientes recientes</h2>
       <div style="overflow-x:auto"><table>
         <thead><tr><th>Nombre</th><th>Código</th><th>Sellos</th><th>Visitas</th><th>Última</th></tr></thead>
@@ -72,6 +106,7 @@ async function login(p) {
   $("loginView").classList.add("hidden");
   $("panelView").classList.remove("hidden");
   loadStats();
+  initPromos();
 }
 
 $("loginBtn").addEventListener("click", async () => {
@@ -182,6 +217,85 @@ async function loadStats() {
       : '<tr><td colspan="5" class="muted">Aún no hay clientes</td></tr>';
   } catch (e) {}
 }
+
+// ---------- Promociones ----------
+const AUD = { all: "Todos los clientes", inactive: "No vienen hace 30 días", near_reward: "A 1 o 2 sellos del premio" };
+let lastReachPush = 0;
+const walletOn = () => !!(window.APP_CONFIG || {}).WALLET_ENABLED;
+const untilDate = iso => new Date(iso).toLocaleDateString("es-CL", { timeZone: "America/Santiago", day: "2-digit", month: "2-digit" });
+function pmsg(type, text) { $("pMsg").innerHTML = '<div class="msg ' + type + '">' + esc(text) + "</div>"; }
+
+function initPromos() {
+  if (!walletOn()) $("pPushWrap").classList.add("hidden");
+  previewPromo();
+  loadPromos();
+}
+
+async function previewPromo() {
+  try {
+    const r = await rpc("panel_promo_preview", { p_slug: slug, p_pin: pin, p_audience: $("pAudience").value });
+    if (!r.ok) return;
+    lastReachPush = r.reach_push;
+    $("pReach").textContent = "La verán " + r.reach + " cliente(s) en su tarjeta. Aviso al Wallet: hasta " + r.reach_push + " (los que aceptaron promociones).";
+  } catch (e) {}
+}
+$("pAudience").addEventListener("change", previewPromo);
+
+async function loadPromos() {
+  try {
+    const r = await rpc("panel_list_promos", { p_slug: slug, p_pin: pin });
+    if (!r.ok) return;
+    $("pList").innerHTML = r.promos.length ? r.promos.map(p =>
+      '<div style="border-top:1px solid var(--line);padding:10px 0"><b>' + esc(p.title) + "</b> " +
+      (p.active ? "" : '<span class="muted">(vencida)</span>') +
+      '<div class="muted">' + esc(AUD[p.audience] || p.audience) + " · hasta el " + esc(untilDate(p.expires_at)) +
+      (p.pushed_at ? " · Wallet: " + p.pushed_count : "") + "</div>" +
+      '<div class="actions"><button class="small secondary" data-del="' + esc(p.id) + '">Eliminar</button></div></div>').join("")
+      : '<p class="muted">Aún no hay promociones</p>';
+  } catch (e) {}
+}
+
+$("pList").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-del]");
+  if (!b) return;
+  if (!confirm("¿Eliminar esta promoción? Dejará de verse en las tarjetas. Los avisos que ya llegaron al Wallet no se pueden retirar.")) return;
+  try {
+    await rpc("panel_delete_promo", { p_slug: slug, p_pin: pin, p_id: b.dataset.del });
+    loadPromos();
+  } catch (err) { pmsg("err", err.message); }
+});
+
+$("pPublish").addEventListener("click", async () => {
+  $("pMsg").innerHTML = "";
+  const title = $("pTitle").value.trim(), body = $("pBody").value.trim();
+  if (title.length < 3 || body.length < 5) return pmsg("err", "Escribe un título y un mensaje");
+  const push = walletOn() && $("pPush").checked && lastReachPush > 0;
+  if (push && !confirm("Se publicará la promoción y se enviará un aviso al Wallet de hasta " + lastReachPush + " cliente(s). Un aviso enviado no se puede retirar. ¿Continuar?")) return;
+  $("pPublish").disabled = true;
+  try {
+    const r = await rpc("panel_create_promo", {
+      p_slug: slug, p_pin: pin, p_title: title, p_body: body, p_audience: $("pAudience").value, p_days: parseInt($("pDays").value, 10)
+    });
+    if (!r.ok) throw new Error(r.error);
+    let extra = "";
+    if (push) {
+      try {
+        const c = window.APP_CONFIG;
+        const res = await fetch(c.SUPABASE_URL + "/functions/v1/wallet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: c.SUPABASE_ANON_KEY },
+          body: JSON.stringify({ action: "broadcast", slug: slug, pin: pin, promo_id: r.id })
+        });
+        const j = await res.json();
+        extra = j.ok ? " Aviso enviado al Wallet de " + j.delivered + " cliente(s)." : " No se pudo avisar al Wallet: " + j.error;
+      } catch (e) { extra = " No se pudo avisar al Wallet."; }
+    }
+    $("pTitle").value = ""; $("pBody").value = "";
+    pmsg("ok", "Promoción publicada: la verán " + r.reach + " cliente(s) en su tarjeta." + extra);
+    loadPromos();
+  } catch (e) { pmsg("err", e.message); }
+  $("pPublish").disabled = false;
+});
 
 // Reingreso automático durante la sesión
 try {
