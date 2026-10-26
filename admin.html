@@ -62,6 +62,11 @@
               <select id="dark"><option value="0">Claro</option><option value="1">Oscuro</option></select>
             </div>
           </div>
+          <h3 style="margin-top:18px">Tarjeta en Google Wallet</h3>
+          <label for="wBanner">Banner (https://…, ideal 1032×336)</label>
+          <input id="wBanner" placeholder="https://…/banner.png">
+          <label for="wColor">Color de fondo en Wallet (opcional)</label>
+          <div class="row2"><input id="wColor" type="color" value="#7a1f26"><button type="button" class="secondary small" id="wColorClear" style="align-self:center">Usar el color principal</button></div>
           <div id="bgImageWrap" class="hidden">
             <label for="bgImage">Link de la imagen de fondo (https://…)</label>
             <input id="bgImage" placeholder="https://…/fondo.jpg">
@@ -118,13 +123,17 @@
 <script src="api.js"></script>
 <script>
 const AKEY = "admin_pass";
+let wColorOn = false;
+function markWColor() { $("wColor").style.opacity = wColorOn ? 1 : .35; }
 let pass = "", restaurants = [], editing = null, slugTouched = false;
 const $ = id => document.getElementById(id);
+$("wColor").addEventListener("input", () => { wColorOn = true; markWColor(); });
+$("wColorClear").addEventListener("click", () => { wColorOn = false; markWColor(); });
 const ICONS = ["★", "❤️", "☕", "🍕", "🍔", "🌶️", "🐟", "🍣", "🥐", "🍰", "🍺", "🍷"];
 const DEFAULTS = {
   name: "", slug: "", required: 8, minHours: 6, reward: "", logo: "", pin: "",
   color: "#e4572e", color2: "#f2b134", font: "system", bg_style: "solid", bg_image_url: "",
-  stamp_icon: "★", welcome_text: "", card_style: "round", dark: false
+  stamp_icon: "★", welcome_text: "", card_style: "round", dark: false, wallet_banner_url: "", wallet_color: ""
 };
 
 $("font").innerHTML = Object.keys(FONTS).map(k => '<option value="' + esc(k) + '">' + esc(FONTS[k].label) + "</option>").join("");
@@ -171,7 +180,8 @@ function readForm() {
     color: $("color").value, color2: $("color2").value, font: $("font").value,
     bg_style: $("bgStyle").value, bg_image_url: $("bgImage").value,
     stamp_icon: $("icon").value, welcome_text: $("welcome").value,
-    card_style: $("cardStyle").value, dark: $("dark").value === "1"
+    card_style: $("cardStyle").value, dark: $("dark").value === "1",
+    wallet_banner_url: $("wBanner").value, wallet_color: wColorOn ? $("wColor").value : ""
   };
 }
 
@@ -185,6 +195,8 @@ function fillForm(o) {
   $("bgStyle").value = o.bg_style || "solid"; $("bgImage").value = o.bg_image_url || "";
   $("icon").value = o.stamp_icon || "★"; $("welcome").value = o.welcome_text || "";
   $("cardStyle").value = o.card_style || "round"; $("dark").value = o.dark ? "1" : "0";
+  $("wBanner").value = o.wallet_banner_url || "";
+  wColorOn = /^#[0-9a-fA-F]{6}$/.test(o.wallet_color || ""); $("wColor").value = wColorOn ? o.wallet_color : "#7a1f26"; markWColor();
 }
 
 function renderPreview() {
@@ -243,7 +255,7 @@ function startEdit(slug) {
     name: r.name, slug: r.slug, required: r.stamps_required, minHours: r.min_hours, reward: r.reward,
     logo: r.logo_url, pin: "", color: r.color, color2: r.color2, font: r.font, bg_style: r.bg_style,
     bg_image_url: r.bg_image_url, stamp_icon: r.stamp_icon, welcome_text: r.welcome_text,
-    card_style: r.card_style, dark: r.dark
+    card_style: r.card_style, dark: r.dark, wallet_banner_url: r.wallet_banner_url, wallet_color: r.wallet_color
   });
   $("slug").disabled = true;
   $("pinWrap").classList.add("hidden");
@@ -286,6 +298,8 @@ $("createBtn").addEventListener("click", async () => {
     if (editing) {
       const u = await rpc("admin_update_restaurant", updateArgs(f, editing));
       if (!u.ok) throw new Error(u.error);
+      const w = await rpc("admin_set_wallet_look", { p_admin: pass, p_slug: editing, p_banner: f.wallet_banner_url, p_color: f.wallet_color });
+      if (!w.ok) throw new Error(w.error);
       await refresh();
       exitEdit();
       $("createMsg").innerHTML = okMsg("Cambios guardados. Recarga la tarjeta del cliente para verlos.");
@@ -296,6 +310,7 @@ $("createBtn").addEventListener("click", async () => {
       });
       if (!c.ok) throw new Error(c.error);
       const u = await rpc("admin_update_restaurant", updateArgs(f, c.slug));
+      if (u.ok) await rpc("admin_set_wallet_look", { p_admin: pass, p_slug: c.slug, p_banner: f.wallet_banner_url, p_color: f.wallet_color });
       await refresh();
       if (!u.ok) throw new Error("El restaurante se creó, pero el diseño no se guardó (" + u.error + "). Usa «Editar diseño» en la lista para reintentarlo.");
       exitEdit();
