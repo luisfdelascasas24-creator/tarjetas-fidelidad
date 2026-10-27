@@ -45,6 +45,7 @@
         <div id="walletMsg"></div>
       </div>
     </div>
+    <div id="bday"></div>
     <div class="card"><p class="muted" style="text-align:center;margin:0">Tip: agrega esta página a la pantalla de inicio de tu celular para tener la tarjeta a mano.</p></div>
   </div>
 </div>
@@ -55,7 +56,7 @@
 <script>
 const slug = param("r");
 const KEY = "tarjeta_" + slug;
-let token = null, qrDone = false, timer = null;
+let token = null, qrDone = false, timer = null, extrasDone = false;
 const $ = id => document.getElementById(id);
 
 function show(id) {
@@ -135,12 +136,36 @@ function renderCard(c) {
     try { new QRCode($("qr"), { text: c.token, width: 200, height: 200 }); qrDone = true; } catch (e) {}
   }
   show("cardView");
+  if (!extrasDone) { extrasDone = true; loadExtras(); }
   if (!timer) {
     timer = setInterval(async () => {
       if (document.hidden || !token) return;
       try { const n = await rpc("get_card", { p_token: token }); if (n.ok) renderCard(n); } catch (e) {}
     }, 10000);
   }
+}
+
+const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+async function loadExtras() {
+  try {
+    const x = await rpc("card_extras", { p_token: token });
+    if (!x.ok || !x.birthday_on || x.birthday_set) return;
+    $("bday").innerHTML = '<div class="card"><h2>🎂 ¿Cuándo es tu cumpleaños?</h2>' +
+      '<p class="muted">Opcional. Te avisamos antes con una sorpresa. Solo guardamos día y mes.</p>' +
+      '<div class="row2"><div><label for="bDay">Día</label><select id="bDay">' +
+      Array.from({ length: 31 }, (_, i) => "<option>" + (i + 1) + "</option>").join("") + "</select></div>" +
+      '<div><label for="bMonth">Mes</label><select id="bMonth">' +
+      MONTHS.map((m, i) => '<option value="' + (i + 1) + '">' + m + "</option>").join("") + "</select></div></div>" +
+      '<button id="bSave">Guardar</button><div id="bMsg"></div></div>';
+    $("bSave").addEventListener("click", async () => {
+      $("bSave").disabled = true;
+      try {
+        const r = await rpc("set_birthday", { p_token: token, p_month: parseInt($("bMonth").value, 10), p_day: parseInt($("bDay").value, 10) });
+        if (!r.ok) throw new Error(r.error);
+        $("bday").innerHTML = '<div class="card"><p class="muted" style="margin:0;text-align:center">¡Listo! Te avisaremos antes de tu cumpleaños 🎉</p></div>';
+      } catch (e) { $("bMsg").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; $("bSave").disabled = false; }
+    });
+  } catch (e) {}
 }
 
 $("walletBtn").addEventListener("click", async () => {

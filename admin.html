@@ -67,6 +67,9 @@
           <input id="wBanner" placeholder="https://…/banner.png">
           <label for="wColor">Color de fondo en Wallet (opcional)</label>
           <div class="row2"><input id="wColor" type="color" value="#7a1f26"><button type="button" class="secondary small" id="wColorClear" style="align-self:center">Usar el color principal</button></div>
+          <label for="wGeo">Ubicación del local (latitud, longitud)</label>
+          <input id="wGeo" placeholder="-33.4372, -70.6506">
+          <p class="muted" style="margin:4px 0 0">En Google Maps haz clic derecho sobre el local y toca los números de arriba para copiarlos. Con esto Google avisa al cliente cuando pasa cerca.</p>
           <div id="bgImageWrap" class="hidden">
             <label for="bgImage">Link de la imagen de fondo (https://…)</label>
             <input id="bgImage" placeholder="https://…/fondo.jpg">
@@ -171,6 +174,13 @@ async function refresh() {
 }
 
 /* ---------- Formulario y vista previa ---------- */
+function parseGeo() {
+  const t = $("wGeo").value.trim();
+  if (!t) return { lat: null, lng: null };
+  const m = t.match(/^(-?\d+(?:\.\d+)?)\s*[,; ]\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) throw new Error("La ubicación debe verse así: -33.4372, -70.6506");
+  return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+}
 function readForm() {
   return {
     name: $("name").value, slug: $("slug").value,
@@ -195,7 +205,7 @@ function fillForm(o) {
   $("bgStyle").value = o.bg_style || "solid"; $("bgImage").value = o.bg_image_url || "";
   $("icon").value = o.stamp_icon || "★"; $("welcome").value = o.welcome_text || "";
   $("cardStyle").value = o.card_style || "round"; $("dark").value = o.dark ? "1" : "0";
-  $("wBanner").value = o.wallet_banner_url || "";
+  $("wBanner").value = o.wallet_banner_url || ""; $("wGeo").value = "";
   wColorOn = /^#[0-9a-fA-F]{6}$/.test(o.wallet_color || ""); $("wColor").value = wColorOn ? o.wallet_color : "#7a1f26"; markWColor();
 }
 
@@ -257,6 +267,7 @@ function startEdit(slug) {
     bg_image_url: r.bg_image_url, stamp_icon: r.stamp_icon, welcome_text: r.welcome_text,
     card_style: r.card_style, dark: r.dark, wallet_banner_url: r.wallet_banner_url, wallet_color: r.wallet_color
   });
+  rpc("restaurant_geo", { p_slug: slug }).then(g => { if (editing === slug && g.ok && g.lat != null) $("wGeo").value = g.lat + ", " + g.lng; }).catch(() => {});
   $("slug").disabled = true;
   $("pinWrap").classList.add("hidden");
   $("formTitle").textContent = "Editando: " + r.name;
@@ -294,12 +305,15 @@ $("createBtn").addEventListener("click", async () => {
   btn.disabled = true;
   try {
     const f = readForm();
+    const geo = parseGeo();
     if (f.name.trim().length < 2) throw new Error("Escribe el nombre del local");
     if (editing) {
       const u = await rpc("admin_update_restaurant", updateArgs(f, editing));
       if (!u.ok) throw new Error(u.error);
       const w = await rpc("admin_set_wallet_look", { p_admin: pass, p_slug: editing, p_banner: f.wallet_banner_url, p_color: f.wallet_color });
       if (!w.ok) throw new Error(w.error);
+      const gres = await rpc("admin_set_geo", { p_admin: pass, p_slug: editing, p_lat: geo.lat, p_lng: geo.lng });
+      if (!gres.ok) throw new Error(gres.error);
       await refresh();
       exitEdit();
       $("createMsg").innerHTML = okMsg("Cambios guardados. Recarga la tarjeta del cliente para verlos.");
@@ -310,7 +324,10 @@ $("createBtn").addEventListener("click", async () => {
       });
       if (!c.ok) throw new Error(c.error);
       const u = await rpc("admin_update_restaurant", updateArgs(f, c.slug));
-      if (u.ok) await rpc("admin_set_wallet_look", { p_admin: pass, p_slug: c.slug, p_banner: f.wallet_banner_url, p_color: f.wallet_color });
+      if (u.ok) {
+        await rpc("admin_set_wallet_look", { p_admin: pass, p_slug: c.slug, p_banner: f.wallet_banner_url, p_color: f.wallet_color });
+        await rpc("admin_set_geo", { p_admin: pass, p_slug: c.slug, p_lat: geo.lat, p_lng: geo.lng });
+      }
       await refresh();
       if (!u.ok) throw new Error("El restaurante se creó, pero el diseño no se guardó (" + u.error + "). Usa «Editar diseño» en la lista para reintentarlo.");
       exitEdit();
