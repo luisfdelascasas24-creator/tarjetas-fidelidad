@@ -23,6 +23,7 @@
       <label for="contact">Correo o teléfono (opcional)</label>
       <input id="contact" autocomplete="email" maxlength="80" placeholder="Para recuperar tu tarjeta">
       <label class="check"><input type="checkbox" id="accepts"> Acepto recibir promociones de este local</label>
+      <p class="muted" style="margin:12px 0 0">Al crear tu tarjeta aceptas nuestra <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</p>
       <button id="registerBtn">Crear mi tarjeta</button>
       <div id="regMsg"></div>
     </div>
@@ -41,7 +42,7 @@
       <div class="code" id="code"></div>
       <p class="muted" style="text-align:center">Muestra este código en caja para sumar tus sellos.</p>
       <div id="walletWrap" class="hidden">
-        <button id="walletBtn" class="wallet-btn">Agregar a Google Wallet</button>
+        <button id="walletBtn" class="wallet-img" aria-label="Agregar a Billetera de Google"><img id="walletImg" src="wallet-button.svg" alt="Agregar a Billetera de Google"><span id="walletTxt" class="hidden">Agregar a Google Wallet</span></button>
         <div id="walletMsg"></div>
       </div>
     </div>
@@ -168,6 +169,13 @@ async function loadExtras() {
   } catch (e) {}
 }
 
+// Botón oficial de Google; si el archivo wallet-button.svg aún no está subido, se usa un botón de texto
+function walletFallback() {
+  $("walletImg").classList.add("hidden"); $("walletTxt").classList.remove("hidden");
+  $("walletBtn").classList.remove("wallet-img"); $("walletBtn").classList.add("wallet-btn");
+}
+$("walletImg").addEventListener("error", walletFallback);
+if ($("walletImg").complete && $("walletImg").naturalWidth === 0) walletFallback();
 $("walletBtn").addEventListener("click", async () => {
   const btn = $("walletBtn");
   btn.disabled = true;

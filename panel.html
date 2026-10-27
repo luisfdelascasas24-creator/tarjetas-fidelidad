@@ -39,6 +39,14 @@
       <div class="grid4" id="stats"></div>
     </div>
 
+    <div class="card" id="wkCard">
+      <h2>Resumen de la semana</h2>
+      <p class="muted">Últimos 7 días, comparados con los 7 anteriores.</p>
+      <div class="grid4" id="wkStats"></div>
+      <div id="wkLists"></div>
+      <button class="secondary" id="wkShare">Enviar resumen por WhatsApp</button>
+    </div>
+
     <div class="card">
       <h2>Promociones</h2>
       <p class="muted">Se muestran en la tarjeta de tus clientes y, si quieres, también llegan como aviso a su Google Wallet (solo a quienes aceptaron recibir promociones).</p>
@@ -259,7 +267,36 @@ $("aSave").addEventListener("click", async () => {
   b.disabled = false;
 });
 
+let wkText = "";
+const delta = (a, b) => { const d = a - b; return d === 0 ? "igual que antes" : (d > 0 ? "▲ " : "▼ ") + Math.abs(d) + " vs semana anterior"; };
+async function loadWeekly() {
+  try {
+    const w = await rpc("panel_weekly", { p_slug: slug, p_pin: pin });
+    if (!w.ok) return;
+    const stat = (label, v, prev) => '<div class="stat"><b>' + esc(v) + "</b>" + esc(label) +
+      (prev == null ? "" : '<div class="muted" style="font-size:.75rem">' + esc(delta(v, prev)) + "</div>") + "</div>";
+    $("wkStats").innerHTML = stat("Clientes nuevos", w.new_customers, w.new_customers_prev) + stat("Sellos dados", w.stamps, w.stamps_prev) +
+      stat("Premios canjeados", w.redeemed, w.redeemed_prev) + stat("Clientes que vinieron", w.active, null);
+    const list = (title, items, fmt) => items.length ? '<h3 style="margin:16px 0 4px;font-size:1rem">' + title + "</h3>" +
+      items.map(x => '<div style="border-top:1px solid var(--line);padding:6px 0">' + esc(fmt(x)) + "</div>").join("") : "";
+    $("wkLists").innerHTML =
+      list("A un paso del premio", w.near, x => x.name + " · le " + (x.missing === 1 ? "falta 1 sello" : "faltan " + x.missing + " sellos")) +
+      list("Dejaron de venir (" + w.lost_count + ")", w.lost, x => x.name + " · hace " + x.days + " días") +
+      list("Cumpleaños esta semana", w.birthdays, x => x.name + " · " + x.day + "/" + x.month);
+    wkText = "Resumen semanal de " + (info && info.name ? info.name : "mi local") + "\n" +
+      "Clientes nuevos: " + w.new_customers + " (" + delta(w.new_customers, w.new_customers_prev) + ")\n" +
+      "Sellos dados: " + w.stamps + " (" + delta(w.stamps, w.stamps_prev) + ")\n" +
+      "Premios canjeados: " + w.redeemed + "\n" +
+      "Clientes que vinieron: " + w.active + " (" + w.returning + " ya eran clientes)\n" +
+      "Dejaron de venir: " + w.lost_count;
+  } catch (e) {}
+}
+$("wkShare").addEventListener("click", () => {
+  if (wkText) window.open("https://wa.me/?text=" + encodeURIComponent(wkText), "_blank", "noopener");
+});
+
 function initPromos() {
+  loadWeekly();
   loadAuto();
   if (!walletOn()) $("pPushWrap").classList.add("hidden");
   previewPromo();
