@@ -304,7 +304,7 @@ $("demoCbBtn").addEventListener("click", () => {
     card_style: "round", dark: false,
     wallet_banner_url: "https://luisfdelascasas24-creator.github.io/tarjetas-fidelidad/banners/colderman-banner.png", wallet_color: "#05667f"
   });
-  fillMode({ mode: "cashback", percent: 3, min: 0, maxpct: 50, expiry: 180, bonus_days: 60, bonus_pct: 2 });
+  fillMode({ mode: "cashback", percent: 1, min: 100000, maxpct: 20, expiry: 180, bonus_days: 60, bonus_pct: 2 });
   slugTouched = true;
   renderPreview();
   $("createMsg").innerHTML = okMsg("Ejemplo cargado. Escribe un PIN (4 dígitos o más) y toca «Crear restaurante».");
