@@ -23,7 +23,7 @@
     <div class="head"><h1 id="rName"></h1><div id="rInfo" style="opacity:.9"></div></div>
 
     <div class="card">
-      <h2>Sumar sello o canjear premio</h2>
+      <h2 id="actTitle">Sumar sello o canjear premio</h2>
       <button id="scanBtn">📷 Escanear QR del cliente</button>
       <div id="reader" class="hidden"></div>
       <button id="stopBtn" class="secondary hidden">Cerrar cámara</button>
@@ -34,9 +34,10 @@
       <div id="actionMsg"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="statsCard">
       <h2>Resumen</h2>
       <div class="grid4" id="stats"></div>
+      <div id="topList"></div>
     </div>
 
     <div class="card" id="wkCard">
@@ -95,7 +96,7 @@
       <div id="aMsg"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="recentCard">
       <h2>Clientes recientes</h2>
       <div style="overflow-x:auto"><table>
         <thead><tr><th>Nombre</th><th>Código</th><th>Sellos</th><th>Visitas</th><th>Última</th></tr></thead>
@@ -112,7 +113,7 @@
 <script>
 const slug = param("r");
 const SKEY = "pin_" + slug;
-let pin = "", scanner = null, currentCode = "", info = null;
+let pin = "", scanner = null, currentCode = "", info = null, mode = "stamps", cbCfg = null;
 const $ = id => document.getElementById(id);
 
 if (!slug) $("loginSub").textContent = "Link inválido. Pide a tu proveedor el link correcto del panel.";
@@ -127,8 +128,22 @@ async function login(p) {
   $("rInfo").textContent = r.stamps_required + " sellos = " + r.reward;
   $("loginView").classList.add("hidden");
   $("panelView").classList.remove("hidden");
-  loadStats();
-  initPromos();
+  initMode().then(() => { loadStats(); initPromos(); });
+}
+
+async function initMode() {
+  try {
+    const m = await rpc("panel_mode", { p_slug: slug, p_pin: pin });
+    if (m.ok && m.mode === "cashback") {
+      mode = "cashback"; cbCfg = m;
+      $("actTitle").textContent = "Registrar compra";
+      $("wkCard").classList.add("hidden");
+      $("recentCard").classList.add("hidden");
+      $("statsCard").querySelector("h2").textContent = "Resumen de la semana";
+      $("rInfo").textContent = "Cashback " + Number(m.percent) + "% · saldo vence a los " + m.expiry + " días";
+      const near = $("aNear").closest("label"); if (near) near.classList.add("hidden");
+    }
+  } catch (e) {}
 }
 
 $("loginBtn").addEventListener("click", async () => {
@@ -155,6 +170,7 @@ async function lookup(code) {
   $("customerBox").classList.add("hidden");
   currentCode = (code || "").trim();
   if (!currentCode) return msg("err", "Escribe o escanea un código");
+  if (mode === "cashback") return cbLookup();
   try {
     const c = await rpc("panel_lookup", { p_slug: slug, p_pin: pin, p_code: currentCode });
     if (!c.ok) return msg("err", c.error);
@@ -170,14 +186,64 @@ async function lookup(code) {
   } catch (e) { msg("err", e.message); }
 }
 
+let cbCustomer = null;
+async function cbLookup() {
+  try {
+    const c = await rpc("panel_cb_lookup", { p_slug: slug, p_pin: pin, p_code: currentCode });
+    if (!c.ok) return msg("err", c.error);
+    cbCustomer = c; currentCode = c.code;
+    $("customerBox").innerHTML =
+      "<p class='big'>" + esc(c.name) + "</p><p class='big'>Saldo: " + esc(clp(c.balance)) + "</p>" +
+      '<p class="muted" style="text-align:center">' + (c.balance > 0 && c.expires_at ? "Vence el " + esc(untilDate(c.expires_at)) + ". " : "") +
+      (c.days_since != null ? "Última compra hace " + c.days_since + " días. " : "Primera compra. ") +
+      (c.bonus ? "Vuelve después de mucho: gana " + Number(c.bonus_pct) + "% extra." : "") + "</p>" +
+      '<label for="cbAmount">Monto de la compra (pesos)</label><input id="cbAmount" inputmode="numeric" placeholder="Ej: 85000">' +
+      '<label for="cbUse">Pagar con saldo (pesos)</label><input id="cbUse" inputmode="numeric" value="0">' +
+      '<button class="secondary small" id="cbMax" type="button" style="margin-top:8px">Usar el máximo</button>' +
+      '<p class="big" id="cbPreview" style="margin-top:12px"></p>' +
+      '<button id="doBtn">Registrar compra</button>';
+    $("customerBox").classList.remove("hidden");
+    $("cbAmount").addEventListener("input", cbPreview); $("cbUse").addEventListener("input", cbPreview);
+    $("cbMax").addEventListener("click", () => { $("cbUse").value = cbMaxUse(); cbPreview(); });
+    $("doBtn").addEventListener("click", cbSubmit);
+    cbPreview();
+  } catch (e) { msg("err", e.message); }
+}
+const cbAmountVal = () => Math.max(0, parseInt(($("cbAmount").value || "").replace(/\D/g, ""), 10) || 0);
+const cbMaxUse = () => Math.min(cbCustomer.balance, Math.floor(cbAmountVal() * cbCustomer.maxpct / 100));
+function cbCalc() {
+  const amount = cbAmountVal(), use = Math.min(Math.max(0, parseInt(($("cbUse").value || "").replace(/\D/g, ""), 10) || 0), cbMaxUse());
+  const net = amount - use, pct = Number(cbCustomer.percent) + (cbCustomer.bonus ? Number(cbCustomer.bonus_pct) : 0);
+  return { amount, use, net, earn: net >= cbCustomer.min ? Math.floor(net * pct / 100) : 0 };
+}
+function cbPreview() {
+  const k = cbCalc();
+  $("cbPreview").textContent = k.amount ? "Cliente paga " + clp(k.net) + " · ganará " + clp(k.earn) : "";
+}
+async function cbSubmit() {
+  const k = cbCalc();
+  if (!k.amount) return msg("err", "Escribe el monto de la compra");
+  $("doBtn").disabled = true;
+  try {
+    const r = await rpc("panel_cb_purchase", { p_slug: slug, p_pin: pin, p_code: currentCode, p_amount: k.amount, p_redeem: k.use });
+    if (!r.ok) { msg("err", r.error); $("doBtn").disabled = false; return; }
+    $("customerBox").classList.add("hidden");
+    $("codeInput").value = "";
+    walletSync(currentCode, "purchase", { mode: "cashback", earned: r.earned, redeemed: r.redeemed });
+    msg("ok", "Compra registrada para " + r.name + ": ganó " + clp(r.earned) + (r.bonus_applied ? " (con bonus por volver)" : "") +
+      (r.redeemed ? ", usó " + clp(r.redeemed) : "") + ". Saldo: " + clp(r.balance));
+    loadStats();
+  } catch (e) { msg("err", e.message); $("doBtn").disabled = false; }
+}
+
 // Avisa a Google Wallet (si el cliente agregó su tarjeta) que cambió su saldo de sellos
-function walletSync(code, event) {
+function walletSync(code, event, extra) {
   const c = window.APP_CONFIG || {};
   if (!c.WALLET_ENABLED) return;
   fetch(c.SUPABASE_URL + "/functions/v1/wallet", {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: c.SUPABASE_ANON_KEY },
-    body: JSON.stringify({ action: "sync", slug: slug, pin: pin, code: code, event: event })
+    body: JSON.stringify(Object.assign({ action: "sync", slug: slug, pin: pin, code: code, event: event }, extra || {}))
   }).catch(() => {});
 }
 
@@ -224,7 +290,25 @@ async function stopScan() {
 $("scanBtn").addEventListener("click", startScan);
 $("stopBtn").addEventListener("click", stopScan);
 
+async function loadCbStats() {
+  try {
+    const s = await rpc("panel_cb_stats", { p_slug: slug, p_pin: pin });
+    if (!s.ok) return;
+    const d = (a, b) => { const x = a - b; return x === 0 ? "igual que antes" : (x > 0 ? "▲ " : "▼ ") + clp(Math.abs(x)).replace("$", "") + " vs semana anterior"; };
+    $("stats").innerHTML =
+      '<div class="stat"><b>' + s.customers + "</b>Clientes con tarjeta</div>" +
+      '<div class="stat"><b>' + esc(clp(s.sales)) + "</b>Ventas con tarjeta (7 días)<div class='muted' style='font-size:.75rem'>" + esc(d(s.sales, s.sales_prev)) + "</div></div>" +
+      '<div class="stat"><b>' + esc(clp(s.earned)) + "</b>Cashback entregado (7 días)</div>" +
+      '<div class="stat"><b>' + esc(clp(s.used)) + "</b>Cashback usado (7 días)</div>" +
+      '<div class="stat"><b>' + esc(clp(s.outstanding)) + "</b>Saldo pendiente de clientes</div>" +
+      '<div class="stat"><b>' + s.inactive + "</b>Sin comprar hace 60+ días</div>";
+    $("topList").innerHTML = s.top && s.top.length ? '<h3 style="margin:16px 0 4px;font-size:1rem">Mejores clientes</h3>' +
+      s.top.map(x => '<div style="border-top:1px solid var(--line);padding:6px 0">' + esc(x.name) + " · " + esc(clp(x.spent_total)) + "</div>").join("") : "";
+  } catch (e) {}
+}
+
 async function loadStats() {
+  if (mode === "cashback") return loadCbStats();
   try {
     const s = await rpc("panel_stats", { p_slug: slug, p_pin: pin });
     if (!s.ok) return;

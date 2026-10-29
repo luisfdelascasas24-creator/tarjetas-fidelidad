@@ -113,3 +113,6 @@ function applyTheme(t, el) {
     if (m) m.setAttribute("content", brand);
   }
 }
+
+// Pesos chilenos con punto de miles: 12500 -> $12.500
+function clp(n) { return "$" + String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }

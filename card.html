@@ -35,12 +35,17 @@
     <div id="promos"></div>
     <div class="card">
       <p class="big" id="hello"></p>
+      <div id="cbBox" class="hidden" style="text-align:center">
+        <div class="muted">Tu saldo de cashback</div>
+        <div class="cb-balance" id="cbBalance"></div>
+        <p class="muted" id="cbInfo"></p>
+      </div>
       <div class="stamps" id="stamps"></div>
       <p class="big" id="progress"></p>
       <div id="readyBox" class="ready hidden"></div>
       <div class="qr" id="qr"></div>
       <div class="code" id="code"></div>
-      <p class="muted" style="text-align:center">Muestra este código en caja para sumar tus sellos.</p>
+      <p class="muted" style="text-align:center" id="showCode">Muestra este código en caja para sumar tus sellos.</p>
       <div id="walletWrap" class="hidden">
         <button id="walletBtn" class="wallet-img" aria-label="Agregar a Billetera de Google"><img id="walletImg" src="wallet-button.svg" alt="Agregar a Billetera de Google"><span id="walletTxt" class="hidden">Agregar a Google Wallet</span></button>
         <div id="walletMsg"></div>
@@ -89,7 +94,11 @@ async function init() {
     if (!r.ok) return fail(r.error);
     applyTheme(r);
     $("regHead").innerHTML = headHtml(r, r.name);
-    $("regPromo").textContent = "Junta " + r.stamps_required + " sellos y llévate: " + r.reward;
+    let prog = null;
+    try { prog = await rpc("restaurant_program", { p_slug: slug }); } catch (e) {}
+    $("regPromo").textContent = prog && prog.ok && prog.mode === "cashback"
+      ? "Gana " + Number(prog.cb_percent) + "% de cashback en cada compra y úsalo en la siguiente. Tu saldo dura " + prog.cb_expiry_days + " días desde tu última compra."
+      : "Junta " + r.stamps_required + " sellos y llévate: " + r.reward;
     show("registerView");
   } catch (e) { fail(e.message); }
 }
@@ -121,14 +130,26 @@ function renderCard(c) {
     '<div class="card promo"><b>' + esc(p.title) + '</b><p style="margin:6px 0 0">' + esc(p.body) +
     '</p><p class="muted" style="margin:6px 0 0">Hasta el ' + esc(untilDate(p.expires_at)) + "</p></div>").join("");
   $("hello").textContent = "Hola, " + c.name;
+  const cb = c.mode === "cashback";
+  $("cbBox").classList.toggle("hidden", !cb);
+  ["stamps", "progress"].forEach(id => $(id).classList.toggle("hidden", cb));
+  if (cb) {
+    $("cbBalance").textContent = clp(c.balance);
+    $("cbInfo").style.whiteSpace = "pre-line";
+    $("cbInfo").textContent = ["Ganas " + Number(c.cb_percent) + "% de cada compra en saldo.",
+      c.balance > 0 && c.balance_expires_at ? "Tu saldo vence el " + new Date(c.balance_expires_at).toLocaleDateString("es-CL", { timeZone: "America/Santiago", day: "2-digit", month: "2-digit", year: "numeric" }) + "." : "",
+      "Puedes pagar hasta el " + c.cb_max_redeem_pct + "% de una compra con tu saldo.",
+      "Si vuelves tras " + c.cb_bonus_days + " días, ganas " + Number(c.cb_bonus_percent) + "% extra."].filter(Boolean).join("\n");
+    $("showCode").textContent = "Entrega este código al vendedor al comprar para sumar o usar tu saldo.";
+  }
   const icon = esc(c.stamp_icon || "★");
   $("stamps").innerHTML = Array.from({ length: c.stamps_required }, (_, i) =>
     '<div class="stamp ' + (i < c.stamps ? "on" : "") + '"><span class="ic">' + icon + "</span></div>").join("");
   const left = c.stamps_required - c.stamps;
-  $("progress").textContent = c.ready ? c.stamps + " de " + c.stamps_required + " sellos"
+  if (!cb) $("progress").textContent = c.ready ? c.stamps + " de " + c.stamps_required + " sellos"
     : "Te faltan " + left + (left === 1 ? " sello" : " sellos") + " para tu premio";
   const rb = $("readyBox");
-  rb.classList.toggle("hidden", !c.ready);
+  rb.classList.toggle("hidden", cb || !c.ready);
   rb.textContent = "¡Premio listo! " + c.reward + ". Pídelo en caja.";
   $("code").textContent = c.code;
   const walletOn = !!(window.APP_CONFIG || {}).WALLET_ENABLED && !/iPhone|iPad|iPod/i.test(navigator.userAgent);

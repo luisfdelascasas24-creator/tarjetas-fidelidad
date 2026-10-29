@@ -21,6 +21,7 @@
     <div class="card" id="formCard">
       <h2 id="formTitle">Nuevo restaurante</h2>
       <button class="secondary" id="demoBtn" type="button">🌶️ Rellenar con el ejemplo peruano</button>
+      <button class="secondary" id="demoCbBtn" type="button">💳 Rellenar con el ejemplo Colderman (cashback)</button>
 
       <div class="row2">
         <div><label for="name">Nombre del local</label><input id="name" placeholder="Ej: Café Central"></div>
@@ -38,6 +39,25 @@
       </div>
       <label for="logo">Link del logo (opcional, debe empezar con https://)</label>
       <input id="logo" placeholder="https://…/logo.png">
+
+      <h2 style="margin-top:24px">Tipo de programa</h2>
+      <label for="mode">¿Cómo gana el cliente?</label>
+      <select id="mode"><option value="stamps">Sellos (juntar sellos y canjear un premio)</option><option value="cashback">Cashback (saldo en pesos)</option></select>
+      <div id="cbWrap" class="hidden">
+        <div class="row2">
+          <div><label for="cbPct">% de cashback por compra</label><input id="cbPct" type="number" min="0" max="30" step="0.5" value="3"></div>
+          <div><label for="cbMin">Compra mínima para ganar ($)</label><input id="cbMin" type="number" min="0" value="0"></div>
+        </div>
+        <div class="row2">
+          <div><label for="cbMax">Máx. % de la compra pagable con saldo</label><input id="cbMax" type="number" min="1" max="100" value="50"></div>
+          <div><label for="cbExp">Días de vigencia del saldo</label><input id="cbExp" type="number" min="7" max="730" value="180"></div>
+        </div>
+        <div class="row2">
+          <div><label for="cbBD">Días sin comprar para bonus por volver</label><input id="cbBD" type="number" min="15" max="365" value="60"></div>
+          <div><label for="cbBP">% extra por volver</label><input id="cbBP" type="number" min="0" max="30" step="0.5" value="2"></div>
+        </div>
+        <p class="muted">En cashback, "Sellos para el premio", "Premio" y "Horas entre sellos" no se usan.</p>
+      </div>
 
       <h2 style="margin-top:24px">Diseño de la tarjeta</h2>
       <div class="split">
@@ -174,6 +194,23 @@ async function refresh() {
 }
 
 /* ---------- Formulario y vista previa ---------- */
+function readMode() {
+  return { mode: $("mode").value, pct: parseFloat($("cbPct").value) || 0, min: parseInt($("cbMin").value, 10) || 0,
+    maxpct: parseInt($("cbMax").value, 10) || 50, exp: parseInt($("cbExp").value, 10) || 180,
+    bd: parseInt($("cbBD").value, 10) || 60, bp: parseFloat($("cbBP").value) || 0 };
+}
+function fillMode(m) {
+  $("mode").value = m.mode || "stamps"; $("cbPct").value = m.percent ?? 3; $("cbMin").value = m.min ?? 0; $("cbMax").value = m.maxpct ?? 50;
+  $("cbExp").value = m.expiry ?? 180; $("cbBD").value = m.bonus_days ?? 60; $("cbBP").value = m.bonus_pct ?? 2;
+  $("cbWrap").classList.toggle("hidden", $("mode").value !== "cashback");
+}
+$("mode").addEventListener("change", () => $("cbWrap").classList.toggle("hidden", $("mode").value !== "cashback"));
+const saveMode = async slug => {
+  const m = readMode();
+  const r = await rpc("admin_set_mode", { p_admin: pass, p_slug: slug, p_mode: m.mode, p_percent: m.pct, p_min: m.min,
+    p_maxpct: m.maxpct, p_expiry: m.exp, p_bonus_days: m.bd, p_bonus_pct: m.bp });
+  if (!r.ok) throw new Error(r.error);
+};
 function parseGeo() {
   const t = $("wGeo").value.trim();
   if (!t) return { lat: null, lng: null };
@@ -257,6 +294,21 @@ $("demoBtn").addEventListener("click", () => {
   $("createMsg").innerHTML = okMsg("Ejemplo cargado. Escribe un PIN (4 dígitos o más) y toca «Crear restaurante».");
 });
 
+$("demoCbBtn").addEventListener("click", () => {
+  exitEdit();
+  fillForm({
+    name: "Colderman", slug: "colderman", required: 8, minHours: 0,
+    reward: "Cashback", logo: "", pin: "",
+    color: "#0b4f8a", color2: "#f28c28", font: "Montserrat", bg_style: "gradient", bg_image_url: "",
+    stamp_icon: "★", welcome_text: "Repuestos de aire acondicionado. Cada compra te devuelve saldo.",
+    card_style: "round", dark: false
+  });
+  fillMode({ mode: "cashback", percent: 3, min: 0, maxpct: 50, expiry: 180, bonus_days: 60, bonus_pct: 2 });
+  slugTouched = true;
+  renderPreview();
+  $("createMsg").innerHTML = okMsg("Ejemplo cargado. Escribe un PIN (4 dígitos o más) y toca «Crear restaurante».");
+});
+
 function startEdit(slug) {
   const r = restaurants.find(x => x.slug === slug);
   if (!r) return;
@@ -267,6 +319,7 @@ function startEdit(slug) {
     bg_image_url: r.bg_image_url, stamp_icon: r.stamp_icon, welcome_text: r.welcome_text,
     card_style: r.card_style, dark: r.dark, wallet_banner_url: r.wallet_banner_url, wallet_color: r.wallet_color
   });
+  rpc("admin_get_mode", { p_admin: pass, p_slug: slug }).then(m => { if (editing === slug && m.ok) fillMode(m); }).catch(() => {});
   rpc("restaurant_geo", { p_slug: slug }).then(g => { if (editing === slug && g.ok && g.lat != null) $("wGeo").value = g.lat + ", " + g.lng; }).catch(() => {});
   $("slug").disabled = true;
   $("pinWrap").classList.add("hidden");
@@ -280,7 +333,7 @@ function startEdit(slug) {
 
 function exitEdit() {
   editing = null; slugTouched = false;
-  fillForm(DEFAULTS);
+  fillForm(DEFAULTS); fillMode({});
   $("slug").disabled = false;
   $("pinWrap").classList.remove("hidden");
   $("formTitle").textContent = "Nuevo restaurante";
@@ -312,6 +365,7 @@ $("createBtn").addEventListener("click", async () => {
       if (!u.ok) throw new Error(u.error);
       const w = await rpc("admin_set_wallet_look", { p_admin: pass, p_slug: editing, p_banner: f.wallet_banner_url, p_color: f.wallet_color });
       if (!w.ok) throw new Error(w.error);
+      await saveMode(editing);
       const gres = await rpc("admin_set_geo", { p_admin: pass, p_slug: editing, p_lat: geo.lat, p_lng: geo.lng });
       if (!gres.ok) throw new Error(gres.error);
       await refresh();
@@ -327,6 +381,7 @@ $("createBtn").addEventListener("click", async () => {
       if (u.ok) {
         await rpc("admin_set_wallet_look", { p_admin: pass, p_slug: c.slug, p_banner: f.wallet_banner_url, p_color: f.wallet_color });
         await rpc("admin_set_geo", { p_admin: pass, p_slug: c.slug, p_lat: geo.lat, p_lng: geo.lng });
+        await saveMode(c.slug);
       }
       await refresh();
       if (!u.ok) throw new Error("El restaurante se creó, pero el diseño no se guardó (" + u.error + "). Usa «Editar diseño» en la lista para reintentarlo.");
