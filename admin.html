@@ -298,10 +298,11 @@ $("demoCbBtn").addEventListener("click", () => {
   exitEdit();
   fillForm({
     name: "Colderman", slug: "colderman", required: 8, minHours: 0,
-    reward: "Cashback", logo: "", pin: "",
-    color: "#0b4f8a", color2: "#f28c28", font: "Montserrat", bg_style: "gradient", bg_image_url: "",
+    reward: "Cashback", logo: "https://luisfdelascasas24-creator.github.io/tarjetas-fidelidad/banners/colderman-logo.png", pin: "",
+    color: "#05667f", color2: "#f28c28", font: "Montserrat", bg_style: "gradient", bg_image_url: "",
     stamp_icon: "★", welcome_text: "Repuestos de aire acondicionado. Cada compra te devuelve saldo.",
-    card_style: "round", dark: false
+    card_style: "round", dark: false,
+    wallet_banner_url: "https://luisfdelascasas24-creator.github.io/tarjetas-fidelidad/banners/colderman-banner.png", wallet_color: "#05667f"
   });
   fillMode({ mode: "cashback", percent: 3, min: 0, maxpct: 50, expiry: 180, bonus_days: 60, bonus_pct: 2 });
   slugTouched = true;
